@@ -18,13 +18,13 @@ A Claude Code skill for writing efficient, idiomatic SWI-Prolog DCGs (Definite C
 
 ```bash
 cd ~/.claude/skills
-git clone https://github.com/YOUR-USERNAME/dcg-parsing-skill.git dcg-parsing
+git clone https://github.com/EricGT/prolog-dcg-skill.git dcg-parsing
 ```
 
 ### Project-Level (Git Submodule)
 
 ```bash
-git submodule add https://github.com/YOUR-USERNAME/dcg-parsing-skill.git .claude/skills/dcg-parsing
+git submodule add https://github.com/EricGT/prolog-dcg-skill.git .claude/skills/dcg-parsing
 ```
 
 ## Usage
