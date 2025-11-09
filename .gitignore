@@ -1,0 +1,52 @@
+# SWI-Prolog Files
+*.qlf
+*.plrc
+.plrc
+
+# Editor/IDE Files
+.vscode/
+*.swp
+*.swo
+*.swn
+.idea/
+*.iml
+*~
+\#*\#
+.\#*
+
+# OS-Specific Files
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+.directory
+.Trash-*
+
+# Log Files
+*.log
+
+# Testing/Development
+test_output/
+*.tmp
+coverage/
+*.bak
+
+# Documentation Build Artifacts
+_build/
+doc/html/
+*.aux
+*.out
+*.toc
+
+# Temporary and Backup Files
+*.orig
+*.rej
+.*.tmp
