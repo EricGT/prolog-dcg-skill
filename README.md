@@ -43,7 +43,3 @@ Example prompts:
 - **EXAMPLES.md** - Complete integrated examples
 - **TESTING.md** - Testing strategies and debugging
 - **REFERENCE.md** - Performance considerations and references
-
-## License
-
-[Choose your license - MIT, Apache 2.0, etc.]
