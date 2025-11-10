@@ -337,12 +337,210 @@ parse_file([]) --> eos.
 6. **Test with phrase/3**: Use remainder to see where parse stopped
 7. **Add debug/3 calls**: Strategic debug output for parse trace
 
+## Summary Checklist
+
+When writing DCG parsers, ensure:
+
+### Parsing
+- ✅ Use `phrase_from_file/2` or `phrase/2` with codes, not intermediate string splits
+- ✅ Parse line endings within DCG rules
+- ✅ Parse field delimiters within DCG rules
+- ✅ Keep all parsing logic in DCG rules
+- ✅ Use cuts appropriately to prevent backtracking
+- ✅ Use tail recursion for lists
+- ✅ Convert to atoms/strings only at the end of parsing
+- ❌ Don't split strings before parsing with DCG
+- ❌ Don't convert between string/atom/codes multiple times
+- ❌ Don't mix string operations with DCG rules
+- ❌ Don't parse in multiple passes when single pass is possible
+- ❌ Don't use library(pcre) - use pure DCG rules instead of regex
+- ❌ Don't use library(dcg/basics) - write explicit DCG rules
+
+### Accumulators
+- ✅ **MUST** use in/out pairs for accumulators: `parse(..., Acc0, Acc)`
+- ✅ **MUST** place accumulator pairs at end of argument list
+- ✅ **MUST** keep accumulator pairs together: `Line0, Line, Offset0, Offset`
+- ✅ **MUST** use consistent ordering: in first, out second
+- ✅ **MUST** use naming convention: input ends in `0`, output has no number
+- ✅ **MUST** increment intermediate variables: `Acc0 → Acc1 → Acc`
+- ❌ Don't use single accumulator values passed back
+- ❌ Don't mix accumulators with other variables
+- ❌ Don't separate accumulator pairs
+
+### Naming Conventions
+- ✅ **PREFER** quantifier suffixes: `'sign?'` (optional), `'digits*'` (zero+), `'digits+'` (one+)
+- ✅ Quote predicate names with special suffixes: `'name?'`, `'name*'`, `'name+'`
+- ✅ Accumulator input: name ending in `0` (e.g., `Seen0`, `Line0`)
+- ✅ Accumulator output: name without number (e.g., `Seen`, `Line`)
+- ✅ Intermediate accumulators: increment number (e.g., `Seen1`, `Seen2`)
+- ✅ **PREFER** Head|Tail naming:
+  - Descriptive names: singular/plural pairs `[Item|Items]`, `[Record|Records]`, `[Line|Lines]`
+  - Single letters: letter with 's' suffix `[X|Xs]`, `[C|Cs]`, `[D|Ds]`
+- ❌ Don't use generic words like `[Head|Tail]`, `[H|T]` (unless single letter)
+
+### DCG Syntax
+- ✅ **IMPORTANT**: Know Prolog flags - `back_quotes` (default: codes), `double_quotes` (default: string)
+- ✅ In DCG, `"abc"` is string but does not matches code lists, `` `abc` `` is code list directly
+- ✅ Use `'abc'` (single quotes) to create atoms
+- ✅ Use `0'X` notation for single character codes (e.g., `0'a` = 97, `0'\t` = 9)
+- ✅ Use numeric codes `[9]` with comments (e.g., `[9]  % ASCII tab`)
+- ✅ Parse as codes in DCG, convert to atoms/strings at the end
+- ✅ **Format disjunctions**: Put semicolon `;` on its own line at the beginning for visibility
+
+### Code Organization
+- ✅ **IMPORTANT**: Order DCG rules from highest level to lowest level (top-down reading)
+- ✅ File-level parsing rules at the top (e.g., `parse_file//1`)
+- ✅ Line/record parsing rules next (e.g., `parse_line//1`, `parse_record//1`)
+- ✅ Field/token parsing rules in the middle (e.g., `parse_field//1`, `identifier//1`)
+- ✅ Character primitives at the bottom (e.g., `tab//2`, `cr//2`, `lf//2`, `digit//1`)
+- ✅ This creates a readable narrative: structure first, details last
+- ❌ Don't mix high-level and low-level rules together
+- ❌ Don't prioritize execution order over readability (Prolog doesn't require forward declarations)
+
+### DCG Composition
+- ✅ **IMPORTANT**: Create character-level DCG primitives (e.g., `tab//2`, `cr//2`, `lf//2`)
+- ✅ Each primitive handles ONE character and its position increment with `succ/2`
+- ✅ Compose primitives into complex patterns (e.g., `line_end//2` from `cr//2` + `lf//2`)
+- ✅ Reuse primitives across different parsing contexts (TSV, CSV, etc.)
+- ✅ Name primitives after the character: `tab`, `cr`, `lf`, not `tab_char`, `cr_byte`
+- ❌ Don't inline character matching in complex patterns
+- ❌ Don't duplicate position tracking logic across similar patterns
+
+### Character Classification
+- ✅ **PREFER** `code_type/2` for single character classification when possible
+- ✅ Define specific character checks: `is_tab(9)`, `is_newline(10)`
+
+### Clause Indexing
+- ✅ **PREFER** just-in-time clause indexing when it makes sense
+- ✅ Order clauses with most specific cases first
+- ✅ Take advantage of automatic indexing on first argument
+- ✅ Use deterministic cuts after specific patterns
+
+### Lookahead and Peek
+- ✅ **IMPORTANT**: Check invocation chain before adding peek - does the called predicate already check the first character?
+- ✅ **PREFER**: Natural DCG alternatives over peek - let predicates fail naturally and backtrack
+- ✅ **IMPORTANT**: Ensure peek operations check bounds to avoid accessing beyond input end
+- ✅ Simple peek `peek(C) --> [C], [C]` is safe (fails gracefully)
+- ✅ Multi-character peek must handle short input: `peek_chars(_N, []) --> []`
+- ✅ Add cut after successful peek to commit: `[C], !, peek_chars(N1, Cs)`
+- ✅ Peek operations should return as many characters as available without error
+- ❌ Don't use peek when called predicate already checks the first character
+- ❌ Don't assume N characters are available when peeking N
+
+### Position Tracking
+- ✅ **IMPORTANT**: Position accumulators go at END of argument list
+- ✅ **MUST** use ordering: `Line0, Line, Offset0, Offset` (Line before Offset)
+- ✅ **MUST** use incremental variables: `Line0, Line1, Line2...` NOT `Line, Line`
+- ✅ **Line increments by 1** when line ending encountered
+- ✅ **Offset increments by 1** for EACH character consumed (character-level precision)
+- ✅ **Every DCG rule** threads position through, even single-character parsers
+- ✅ Invaluable for debugging large files (can strip for production)
+- ❌ Don't use `Line, Line` - assumes Line never changes, creates brittle code
+- ❌ Don't increment offset by field length - increment by 1 per character
+- ❌ Don't put position accumulators at beginning of argument list
+
+### List Building
+- ✅ **PREFER** DCG forward accumulation to avoid using `reverse/2`
+- ✅ **PREFER** DCG forward accumulation instead of `append/3` for O(n) building
+- ✅ Build lists forward using DCG pattern: `[Item|Items]`
+- ✅ DCGs naturally build lists forward - use this
+- ✅ Use `memberchk/2` instead of `member/2` when applicable (deterministic)
+- ❌ Don't build lists backward then reverse
+- ❌ Don't use `append/3` in recursive list building (O(n²))
+- ❌ Don't use `member/2` when you don't need backtracking
+
+### Arithmetic
+- ✅ **PREFER** `succ/2` for simple +1 increments: `succ(N0, N1)`
+- ✅ **PREFER** `succ/2` for -1 decrements: `succ(N1, N0)` (reversed arguments)
+- ✅ **IMPORTANT**: Break multi-character sequences (like `\r\n`) into individual character increments with `succ/2` to avoid manual counting errors
+- ✅ Use `is/2` for complex arithmetic: `N is N0 + Length + 1`
+- ✅ Use `is/2` when incrementing by values other than 1
+- ❌ Don't use `is/2` for simple +1: use `succ/2` instead
+- ❌ Don't manually count characters in multi-character sequences: break down into single increments
+
+### Error Handling
+- ✅ **PREFER** `library(error)` for throwing structured errors
+- ✅ Use `must_be/2` for type validation
+- ✅ Use standard error terms: `type_error/2`, `domain_error/2`, `existence_error/2`
+- ✅ Include position context in error terms
+
+### File I/O
+- ✅ **PREFER** `catch/3` when reading files
+- ✅ Wrap `phrase_from_file/2` in catch/3 for error handling
+- ✅ Handle specific errors: `existence_error`, `permission_error`
+- ✅ Use `call_cleanup/2` for explicit stream management
+
+### Testing
+- ✅ **MUST** write unit tests for all DCG clauses using plunit
+- ✅ **MUST** place tests in separate test files (test/prolog/test_*.pl)
+- ✅ Test happy path, edge cases, invalid input, and large inputs
+- ✅ Test different line endings: `\n`, `\r\n`, `\r`, no ending
+- ✅ Use `phrase/2` for incremental testing during development
+- ✅ Run tests frequently: `?- run_tests.`
+
+### Debugging
+- ✅ **MUST** track character offset and line number for error locations
+- ✅ **MUST** use `library(debug)` with debug topics (e.g., `debug(parse)`)
+- ✅ Include position information (line, offset) in parsed results
+- ✅ Report parse errors with exact position: `error(pos(Line, Offset), Context)`
+- ✅ Enable/disable debug output without changing code: `?- debug(parse).`
+- ✅ For large files (megabytes), positions enable grepping to problem location
+
+## References
+
+### Documentation
+- SWI-Prolog DCG documentation: https://www.swi-prolog.org/pldoc/man?section=DCG
+- phrase_from_file/2: Direct file parsing with DCGs
+- Prolog Unit Tests (plunit): https://www.swi-prolog.org/pldoc/doc_for?object=section(%27packages/plunit.html%27)
+- library(debug): https://www.swi-prolog.org/pldoc/man?section=debug
+- library(error): https://www.swi-prolog.org/pldoc/man?section=error
+- code_type/2: https://www.swi-prolog.org/pldoc/man?predicate=code_type/2
+
+### Best Practices
+- Performance: Single-pass parsing is both clearer and faster
+- Testing: All DCG clauses must have unit tests
+- Debugging: Track positions for error reporting in large files
+- Error Handling: Use structured error terms with position context
+- Accumulators: In/out pairs at end of argument list
+
+## Libraries to Use
+
+- ✅ **library(debug)**: For debugging with toggleable debug topics
+- ✅ **library(error)**: For throwing structured, standardized errors (`must_be/2`, error terms)
+- ✅ **Prolog Unit Tests (plunit)**: For testing DCG clauses
+
+## Libraries NOT to Use
+
+- ❌ **library(pcre)**: Use pure DCG rules, not regular expressions
+- ❌ **library(dcg/basics)**: Write explicit DCG rules for full control and clarity
+
+## Key Preferences Summary
+
+1. **Character Classification**: Use `code_type/2` when possible
+2. **Clause Indexing**: Prefer just-in-time clause indexing when it makes sense
+3. **List Building**: Use DCG forward accumulation to avoid `reverse/2` and `append/3`
+4. **Membership Testing**: Use `memberchk/2` instead of `member/2` when deterministic
+5. **Arithmetic**: Use `succ/2` for simple +1/-1 operations; use `is/2` for complex arithmetic
+6. **Equality in Guards**: Use `==/2` and `\==/2` for testing values in conditionals; use `=/2` only for actual unification/binding; avoid LLM training data errors where `=/2` is used in guards
+7. **Accumulator Naming**: Input ends in `0`, output has no number (e.g., `Acc0, Acc`)
+8. **Quantifier Naming**: Use `'name?'` (optional), `'name*'` (zero+), `'name+'` (one+)
+9. **Head|Tail Naming**: Descriptive names use singular/plural (e.g., `[Item|Items]`), single letters use 's' suffix (e.g., `[X|Xs]`)
+10. **DCG String Syntax**: Know Prolog flags (`back_quotes`=codes, `double_quotes`=string); use `` `abc` `` for codes, `"abc"` for strings (matches codes in DCG), `'abc'` for atoms; comment numeric codes `[9]  % ASCII tab`
+11. **Disjunction Formatting**: Put semicolon `;` on its own line at the beginning for visibility
+12. **Peek Usage**: Check invocation chain before adding peek - most parsing predicates self-check first character; prefer natural DCG alternatives; only use peek when lookahead is needed without consumption; ensure peek operations check bounds and return available characters without error; multi-char peek must handle short input with `peek_chars(_N, []) --> []`
+13. **Position Tracking**: Position accumulators at END in order `Line0, Line, Offset0, Offset`; use incremental variables `Line0, Line1, Line2...` NOT `Line, Line`; use `succ/2` for incrementing; thread through every DCG rule
+14. **Error Handling**: Use `library(error)` with structured error terms
+15. **File I/O**: Use `catch/3` to wrap file operations
+16. **Accumulators**: Use in/out pairs at end of argument list
+17. **Testing**: Write plunit tests for all DCG clauses in separate files
+18. **Debugging**: Track line and character offset, use `library(debug)`
+
 ## Additional Resources
 
 For comprehensive documentation including:
 - All DCG patterns (30+ patterns)
 - Position tracking details
 - File I/O integration
-- Error handling strategies
+- Complete examples
 
-See [PATTERNS.md](PATTERNS.md) and the original dcg-parsing-skill.md file.
+See [PATTERNS.md](PATTERNS.md), [EXAMPLES.md](EXAMPLES.md), [TESTING.md](TESTING.md), and [ERROR_HANDLING.md](ERROR_HANDLING.md).

@@ -38,8 +38,13 @@ Example prompts:
 
 ## Documentation
 
-- **SKILL.md** - Main skill guide with core philosophy and patterns
-- **PATTERNS.md** - Comprehensive pattern library
-- **EXAMPLES.md** - Complete integrated examples
-- **TESTING.md** - Testing strategies and debugging
-- **REFERENCE.md** - Performance considerations and references
+- **[SKILL.md](SKILL.md)** - Main skill guide with core philosophy and patterns
+- **[PATTERNS.md](PATTERNS.md)** - Comprehensive pattern library (30+ patterns)
+- **[ERROR_HANDLING.md](ERROR_HANDLING.md)** - Error handling and debugging strategies
+- **[EXAMPLES.md](EXAMPLES.md)** - Complete integrated examples
+- **[TESTING.md](TESTING.md)** - Testing strategies and debugging techniques
+- **[REFERENCE.md](REFERENCE.md)** - Performance considerations, common mistakes, and references
+
+## License
+
+[Choose your license - MIT, Apache 2.0, etc.]

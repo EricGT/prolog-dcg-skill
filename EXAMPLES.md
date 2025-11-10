@@ -215,12 +215,56 @@ validate_integer(Value, LineNum) :-
 ?- parse_tsv_file_safe('data.tsv', Records).  % Safe version
 ```
 
+## Real-World Example: Cscope Output
+
+### Before: Mixed String/DCG Processing
+
+```prolog
+% AVOID: Multiple passes
+process_cscope_output(Stream, Results) :-
+    read_string(Stream, _, Content),              % Pass 1
+    split_string(Content, "\n", "\r", Lines),     % Pass 2
+    maplist(parse_cscope_line, Lines, Results).   % Pass 3
+
+parse_cscope_line(Line, result(File, Sym, Num, Context)) :-
+    split_string(Line, " ", "", Parts),           % Pass 4
+    Parts = [File, Sym, Num | ContextParts],
+    atomics_to_string(ContextParts, " ", Context). % Pass 5
+```
+
+### After: Pure DCG
+
+```prolog
+% PREFER: Single pass
+process_cscope_output(Stream, Results) :-
+    phrase_from_stream(cscope_lines(Results), Stream).
+
+cscope_lines([Line|Lines]) -->
+    cscope_line(Line), !,
+    cscope_lines(Lines).
+cscope_lines([]) --> eos.
+
+cscope_line(result(File, Sym, Num, Context)) -->
+    space_field(File), ` `,
+    space_field(Sym), ` `,
+    space_field(Num), ` `,
+    rest_of_line(Context).
+
+space_field(Field) -->
+    non_space_codes(FieldCodes),
+    { atom_codes(Field, FieldCodes) }.
+
+non_space_codes([C|Cs]) -->
+    [C], { C \= 32, C \= 10, C \= 13 }, !,  % Not space, LF, CR
+    non_space_codes(Cs).
+non_space_codes([]) --> [].
+```
+
 ## Additional Examples
 
 For more examples including:
-- Cscope output parsing
 - Real-world C code parsing
 - Template expansion with difference lists
 - SQL dialect conversion
 
-See the [examples](../examples/) directory or sections 2694-2738 of the original dcg-parsing-skill.md file.
+See the [examples](../examples/) directory.

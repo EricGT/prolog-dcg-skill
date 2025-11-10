@@ -25,10 +25,11 @@ When applying these patterns, consider your project's requirements and constrain
 
 This skill is organized into multiple files for progressive disclosure:
 
-- **[PATTERNS.md](PATTERNS.md)** - Comprehensive DCG patterns library (tab-separated fields, C identifiers, accumulators, position tracking, etc.)
+- **[PATTERNS.md](PATTERNS.md)** - Comprehensive DCG patterns library (30+ patterns: tab-separated fields, C identifiers, accumulators, position tracking, etc.)
+- **[ERROR_HANDLING.md](ERROR_HANDLING.md)** - Error handling and debugging strategies with position tracking
 - **[EXAMPLES.md](EXAMPLES.md)** - Complete integrated examples and real-world use cases
 - **[TESTING.md](TESTING.md)** - Testing strategies and debugging techniques
-- **[REFERENCE.md](REFERENCE.md)** - Performance considerations, detailed references
+- **[REFERENCE.md](REFERENCE.md)** - Performance considerations, common mistakes, and detailed references
 
 ## Core Philosophy
 
