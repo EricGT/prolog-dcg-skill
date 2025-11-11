@@ -1,6 +1,6 @@
 # DCG Parsing Skill for Claude Code
 
-A Claude Code skill for writing efficient, idiomatic SWI-Prolog DCGs (Definite Clause Grammars).
+A specialized Claude Code skill that guides Claude in writing efficient, idiomatic SWI-Prolog DCGs (Definite Clause Grammars) following best practices for single-pass parsing, character codes, and pure declarative style.
 
 ## Features
 
@@ -47,4 +47,4 @@ Example prompts:
 
 ## License
 
-[Choose your license - MIT, Apache 2.0, etc.]
+BSD 2-Clause License - See [LICENSE](LICENSE) for details.
