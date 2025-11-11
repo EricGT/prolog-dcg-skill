@@ -63,22 +63,12 @@ Write all parsing logic using pure DCG notation. This ensures the grammar is exp
 ```prolog
 % Multiple passes - AVOID THIS
 parse_file(File, Result) :-
-    read_file_to_string(File, Content, []),          % Pass 1: read
-    split_string(Content, "\n", "\r", Lines),        % Pass 2: split lines
-    maplist(process_line, Lines, Results).           % Pass 3: process
-
-process_line(Line, Result) :-
-    split_string(Line, "\t", "", [F1, F2, F3]),      % Pass 4: split fields
-    string_codes(F3, Codes),                          % Pass 5: convert to codes
-    phrase(parse_field(Data), Codes),                 % Pass 6: finally parse with DCG
-    Result = data(F1, F2, Data).
+    read_file_to_string(File, Content, []),          % Pass 1
+    split_string(Content, "\n", "\r", Lines),        % Pass 2
+    maplist(process_line, Lines, Results).           % Pass 3
 ```
 
-**Problems:**
-- 6 passes over the data
-- Mixes string operations, list operations, and DCGs
-- Hard to see the actual grammar
-- Inefficient memory usage with intermediate structures
+**Problems:** 6 passes, mixes string operations with DCGs, inefficient
 
 ### ✅ PREFER: Pure DCG Single-Pass
 
@@ -87,50 +77,16 @@ process_line(Line, Result) :-
 parse_file(File, Result) :-
     phrase_from_file(file_content(Result), File).
 
-% Parse entire file structure in one DCG
-file_content([Line|Lines]) -->
-    file_line(Line), !,
-    file_content(Lines).
-file_content([]) -->
-    eos.
+file_content([Line|Lines]) --> file_line(Line), !, file_content(Lines).
+file_content([]) --> eos.
 
-% Parse a single line including newline
 file_line(data(F1, F2, Data)) -->
-    field(F1), `\t`,
-    field(F2), `\t`,
-    parse_field(Data),
-    line_end.
-
-% Parse field up to delimiter
-field(Field) -->
-    field_codes(FieldCodes),
-    { string_codes(Field, FieldCodes) }.
-
-field_codes([C|Cs]) -->
-    [C], { C \= 9 },  % 9 = tab
-    !,
-    field_codes(Cs).
-field_codes([]) --> [].
-
-% Parse specific field content with DCG
-parse_field(result(X, Y)) -->
-    'whites*',
-    identifier(X),
-    'whites*', `(`,
-    identifier(Y),
-    `)`.
-
-% Handle different line ending types
-line_end --> `\r\n` | `\n` | `\r`.
-
+    field(F1), `\t`, field(F2), `\t`, parse_field(Data), line_end.
 ```
 
-**Benefits:**
-- Single pass through data
-- Clear grammar structure visible in DCG rules
-- Efficient - no intermediate conversions
-- Declarative - what to parse, not how to split/convert
-- Easy to debug - can test individual DCG rules
+**Benefits:** Single pass, clear grammar, efficient, easy to debug
+
+**See [PATTERNS.md](PATTERNS.md) for detailed examples and variations**
 
 ## Essential DCG Helpers
 
@@ -282,63 +238,17 @@ parse_line(Item, Seen0, Seen) -->
       Seen = [Name|Seen0] }.
 ```
 
-## Summary Checklist
+## Quick Reference
 
-### Parsing
-- ✅ Use `phrase_from_file/2` or `phrase/2` with codes, not intermediate string splits
-- ✅ Parse line endings within DCG rules
-- ✅ Parse field delimiters within DCG rules
-- ✅ Keep all parsing logic in DCG rules
-- ✅ Use cuts appropriately to prevent backtracking
-- ✅ Use tail recursion for lists
-- ✅ Convert to atoms/strings only at the end of parsing
-- ❌ Don't split strings before parsing with DCG
-- ❌ Don't convert between string/atom/codes multiple times
-- ❌ Don't mix string operations with DCG rules
-- ❌ Don't parse in multiple passes when single pass is possible
-- ❌ Don't use library(pcre) - use pure DCG rules instead of regex
-- ❌ Don't use library(dcg/basics) - write explicit DCG rules
+**For comprehensive checklists, see [REFERENCE.md](REFERENCE.md)**
 
-### Accumulators
-- ✅ **MUST** use in/out pairs for accumulators: `parse(..., Acc0, Acc)`
-- ✅ **MUST** place accumulator pairs at end of argument list
-- ✅ **MUST** keep accumulator pairs together: `Line0, Line, Offset0, Offset`
-- ✅ **MUST** use consistent ordering: in first, out second
-- ✅ **MUST** use naming convention: input ends in `0`, output has no number
-- ✅ **MUST** increment intermediate variables: `Acc0 → Acc1 → Acc`
-- ❌ Don't use single accumulator values passed back
-- ❌ Don't mix accumulators with other variables
-- ❌ Don't separate accumulator pairs
-
-### Naming Conventions
-- ✅ **PREFER** quantifier suffixes: `'sign?'` (optional), `'digits*'` (zero+), `'digits+'` (one+)
-- ✅ Quote predicate names with special suffixes: `'name?'`, `'name*'`, `'name+'`
-- ✅ Accumulator input: name ending in `0` (e.g., `Seen0`, `Line0`)
-- ✅ Accumulator output: name without number (e.g., `Seen`, `Line`)
-- ✅ Intermediate accumulators: increment number (e.g., `Seen1`, `Seen2`)
-- ✅ **PREFER** Head|Tail naming:
-  - Descriptive names: singular/plural pairs `[Item|Items]`, `[Record|Records]`, `[Line|Lines]`
-  - Single letters: letter with 's' suffix `[X|Xs]`, `[C|Cs]`, `[D|Ds]`
-- ❌ Don't use generic words like `[Head|Tail]`, `[H|T]` (unless single letter)
-
-### DCG Syntax
-- ✅ **IMPORTANT**: Know Prolog flags - `back_quotes` (default: codes), `double_quotes` (default: string)
-- ✅ In DCG, `"abc"` is string but does not matches code lists, `` `abc` `` is code list directly
-- ✅ Use `'abc'` (single quotes) to create atoms
-- ✅ Use `0'X` notation for single character codes (e.g., `0'a` = 97, `0'\t` = 9)
-- ✅ Use numeric codes `[9]` with comments (e.g., `[9]  % ASCII tab`)
-- ✅ Parse as codes in DCG, convert to atoms/strings at the end
-- ✅ **Format disjunctions**: Put semicolon `;` on its own line at the beginning for visibility
-
-### Code Organization
-- ✅ **IMPORTANT**: Order DCG rules from highest level to lowest level (top-down reading)
-- ✅ File-level parsing rules at the top (e.g., `parse_file//1`)
-- ✅ Line/record parsing rules next (e.g., `parse_line//1`, `parse_record//1`)
-- ✅ Field/token parsing rules in the middle (e.g., `parse_field//1`, `identifier//1`)
-- ✅ Character primitives at the bottom (e.g., `tab//2`, `cr//2`, `lf//2`, `digit//1`)
-- ✅ This creates a readable narrative: structure first, details last
-- ❌ Don't mix high-level and low-level rules together
-- ❌ Don't prioritize execution order over readability (Prolog doesn't require forward declarations)
+### Core Principles:
+- Single-pass DCG parsing with `phrase_from_file/2`
+- Work with character codes, convert at output boundaries
+- Accumulators: in/out pairs (`Acc0, Acc`) at END of arguments
+- Position tracking: `Line0, Line, Offset0, Offset` at END
+- Use `memberchk/2` (not `member/2`) and `succ/2` (not `is/2` for +1)
+- Order rules top-down: file → line → field → character primitives
 
 ## Libraries to Use
 

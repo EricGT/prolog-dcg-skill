@@ -1,0 +1,5 @@
+{
+  "name": "dcg-parsing",
+  "description": "Guide Claude in writing efficient, idiomatic SWI-Prolog DCGs (Definite Clause Grammars) following best practices for single-pass parsing, character codes, pure declarative style, and accumulator patterns. Use when working with Prolog parsing tasks.",
+  "version": "1.0.0"
+}
