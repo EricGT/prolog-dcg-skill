@@ -47,6 +47,205 @@ file_line(Item, Line0, Line, Offset0, Offset) -->
     line_end(Line0, Line, Offset1, Offset).
 ```
 
+## Pattern: Direct File Parsing with phrase_from_file/2
+
+### Overview
+
+`phrase_from_file/2` enables parsing files directly without reading to strings or splitting into lines. This achieves true single-pass parsing with no intermediate data structures.
+
+### The Transformation
+
+**Before (Multi-pass):**
+
+```prolog
+% AVOID: Multiple passes
+extract_definitions(SymbolsFile, Definitions, Options) :-
+    read_file_to_string(SymbolsFile, Content, []),     % Pass 1: File → String
+    split_string(Content, "\n", "\r", Lines),          % Pass 2: String → Lines
+    extract_defs_from_lines(Lines, [], Definitions).   % Pass 3: Lines → Data
+```
+
+**Problems:**
+- Three passes over the data
+- Two intermediate data structures (string, line list)
+- Multiple memory allocations
+- Cannot maintain state across lines efficiently
+
+**After (Single-pass):**
+
+```prolog
+% PREFER: Single pass
+extract_definitions(SymbolsFile, Definitions, Options) :-
+    phrase_from_file(symbol_file_lines(Definitions, []), SymbolsFile).
+```
+
+**Benefits:**
+- Single pass over file
+- No intermediate structures
+- Direct character code processing
+- Clean accumulator threading for state
+
+### File-Level DCG Structure
+
+```prolog
+% File parser with accumulator for tracking seen symbols
+symbol_file_lines(Defs, Seen0) -->
+    symbol_line(Def, Seen0, Seen1),
+    !,
+    {
+        (   Def = def(_, _, _, _)        % Valid definition
+        ->  Defs = [Def|RestDefs]
+        ;   Defs = RestDefs,              % Skip this line
+            Seen1 = Seen0
+        )
+    },
+    symbol_file_lines(RestDefs, Seen1).
+symbol_file_lines([], _) -->
+    [].
+```
+
+### Line-Level Parser
+
+```prolog
+% Empty line - skip
+symbol_line(none, Seen, Seen) -->
+    'whites*',
+    newline,
+    !.
+
+% Valid line - parse fields
+symbol_line(Def, Seen0, Seen) -->
+    file_field(File), `\t`,
+    scope_field(Scope), `\t`,
+    line_number_field(LineNum), `\t`,
+    field_until_newline(ContextCodes),
+    newline,
+    !,
+    {
+        string_codes(Context, ContextCodes),
+        process_definition(File, Scope, LineNum, Context,
+                          Def, Seen0, Seen)
+    }.
+
+% Failed parse - skip line gracefully
+symbol_line(none, Seen, Seen) -->
+    skip_until_newline,
+    newline.
+```
+
+### Accumulator Threading
+
+**Key principles for file parsing with accumulators:**
+
+```prolog
+% Input accumulator: Acc0, Seen0, State0
+% Intermediate: Acc1, Seen1, State1
+% Output accumulator: Acc, Seen, State (no number)
+
+file_lines(Results, Acc0) -->
+    line_parser(Result, Acc0, Acc1),
+    !,
+    { process_result(Result, Results, RestResults, Acc0, Acc1) },
+    file_lines(RestResults, Acc1).
+file_lines([], Acc) -->
+    [],
+    { finalize_accumulator(Acc) }.
+```
+
+**Naming Convention:**
+- Input ends in `0`: `Seen0`, `Count0`, `State0`
+- Intermediate increments: `Seen1`, `Count1`, `State1`
+- Output has no number: `Seen`, `Count`, `State`
+
+**Position:**
+- Always at END of argument list
+- Keep related accumulators together
+- Maintain consistent pairing
+
+```prolog
+% ✅ CORRECT: Accumulators at end, properly paired
+parse_lines(Results, Seen0, Seen, Count0, Count) --> ...
+
+% ❌ WRONG: Accumulators scattered
+parse_lines(Results, Seen0, Count0, Seen, Count) --> ...
+```
+
+### Complete Example
+
+```prolog
+% Top-level: parse file with state tracking
+extract_function_calls(SymbolsFile, Functions, Options) :-
+    phrase_from_file(function_names_file(Functions, []), SymbolsFile).
+
+% File-level parser
+function_names_file(Functions, Acc0) -->
+    function_name_line(Name, Acc0),
+    !,
+    {
+        (   Name \= none,
+            Name \= '<global>',
+            \+ memberchk(Name, Acc0)
+        ->  Acc1 = [Name|Acc0]
+        ;   Acc1 = Acc0
+        )
+    },
+    function_names_file(Functions, Acc1).
+function_names_file(Functions, Functions) -->
+    [].
+
+% Line-level parser
+function_name_line(Name, _Acc) -->
+    'whites*',
+    newline,
+    !,
+    { Name = none }.
+
+function_name_line(Name, _Acc) -->
+    skip_until_tab, `\t`,
+    field_until_tab(NameCodes), `\t`,
+    skip_until_newline,
+    newline,
+    !,
+    { atom_codes(Name, NameCodes) }.
+
+function_name_line(none, _Acc) -->
+    skip_until_newline,
+    newline.
+```
+
+### Performance Benefits
+
+**Before:**
+- File → String conversion: 1 full memory allocation
+- String → Lines split: 1 full memory allocation + N string allocations
+- Lines → Data: N line processing operations
+- Total: 3+ passes, 2+ N memory allocations
+
+**After:**
+- File → Codes → Results: Single pass
+- No intermediate structures
+- Streaming character processing
+- Total: 1 pass, minimal allocations
+
+### When to Use phrase_from_file/2
+
+Use `phrase_from_file/2` when:
+
+✅ Parsing entire files with structured format
+✅ Need to maintain state across lines (accumulators)
+✅ Single-pass parsing is possible
+✅ File size fits comfortably in memory
+✅ Want to eliminate string manipulation overhead
+
+### When NOT to Use phrase_from_file/2
+
+Consider line-by-line reading when:
+
+❌ Files are extremely large (multi-GB)
+❌ Need incremental processing with early exit
+❌ Cannot predict file size (unbounded streams)
+❌ Memory constraints are critical
+
 ## Pattern: Using phrase/2 with read_string
 
 **Use when**: You need to process the stream first or read from non-file streams.
@@ -333,6 +532,155 @@ handle_parse_error_with_position(Error, Filename, []) :-
       format(user_error, 'Error parsing ~w: ~w~n', [Filename, Error])
     ).
 ```
+
+## Pattern: Single-Pass Stream Processing
+
+### Overview
+
+When processing streams from external sources (pipes, network), read the entire stream into codes, parse once with DCG, then write results. This eliminates line-by-line I/O overhead.
+
+### The Transformation
+
+**Before (Line-by-line):**
+
+```prolog
+% AVOID: Line-by-line processing
+read_and_reformat_lines(In, Out, Acc, Total) :-
+    read_line_to_string(In, Line),           % N read operations
+    (   Line == end_of_file
+    ->  Total = Acc
+    ;   reformat_cscope_line(Line, Reformatted),
+        format(Out, '~s~n', [Reformatted]),  % N write operations
+        Acc1 is Acc + 1,
+        read_and_reformat_lines(In, Out, Acc1, Total)
+    ).
+```
+
+**Problems:**
+- N read operations (one per line)
+- N write operations (one per line)
+- String conversion on each line
+- Recursion overhead
+
+**After (Single-pass):**
+
+```prolog
+% PREFER: Single-pass stream processing
+read_and_reformat_lines(In, Out, _Acc, Total) :-
+    read_stream_to_codes(In, Codes),             % 1 read operation
+    phrase(cscope_stream_lines(Lines), Codes),   % Single parse pass
+    write_reformatted_lines(Out, Lines, 0, Total). % Batch write
+```
+
+**Benefits:**
+- 1 read operation (entire stream)
+- Single DCG parsing pass
+- Batch writing (more efficient)
+- No line-by-line overhead
+
+### Stream DCG Parser
+
+```prolog
+% Parse entire stream into list of lines
+cscope_stream_lines([Line|Lines]) -->
+    parse_cscope_line(File, Symbol, LineNum, Context),
+    newline,
+    !,
+    {
+        normalize_path(File, NormFile),
+        atomics_to_string([NormFile, Symbol, LineNum, Context], "\t", Line)
+    },
+    cscope_stream_lines(Lines).
+cscope_stream_lines([]) -->
+    [].
+
+% Parse single line from stream
+parse_cscope_line(File, Symbol, LineNum, Context) -->
+    field_until_space(FileCodes), 'whites+',
+    field_until_space(SymbolCodes), 'whites+',
+    field_until_space(LineNumCodes), 'whites+',
+    field_until_newline(ContextCodes),
+    {
+        atom_codes(File, FileCodes),
+        atom_codes(Symbol, SymbolCodes),
+        atom_codes(LineNum, LineNumCodes),
+        string_codes(Context, ContextCodes)
+    }.
+```
+
+### Batch Writer
+
+```prolog
+% Write all results at once
+write_reformatted_lines(_, [], Total, Total).
+write_reformatted_lines(Out, [Line|Lines], Acc, Total) :-
+    format(Out, '~s~n', [Line]),
+    succ(Acc, Acc1),
+    write_reformatted_lines(Out, Lines, Acc1, Total).
+```
+
+### Complete Example
+
+```prolog
+% Process cscope output stream
+generate_cscope_data(SymbolsFile, Options) :-
+    setup_call_cleanup(
+        open(SymbolsFile, write, Out, [encoding(utf8)]),
+        process_cscope_output(Out),
+        close(Out)
+    ).
+
+process_cscope_output(Out) :-
+    process_create(
+        path(cscope),
+        ['-d', '-L', '-1', '.*'],
+        [stdout(pipe(In)), stderr(null)]
+    ),
+    setup_call_cleanup(
+        true,
+        read_and_reformat_lines(In, Out, 0, Total),
+        close(In)
+    ),
+    debug(cscope, 'Processed ~w lines', [Total]).
+
+read_and_reformat_lines(In, Out, _Acc, Total) :-
+    read_stream_to_codes(In, Codes),
+    phrase(cscope_stream_lines(Lines), Codes),
+    write_reformatted_lines(Out, Lines, 0, Total).
+```
+
+### Performance Benefits
+
+**Before (Line-by-line):**
+- System calls: N reads + N writes
+- String allocations: N
+- Recursion depth: N
+- Format operations: N
+
+**After (Stream processing):**
+- System calls: 1 read + N writes (batched)
+- Code processing: Single pass
+- Recursion depth: For writing only
+- Format operations: N (but batched)
+
+### When to Use Stream Processing
+
+Use this pattern when:
+
+✅ Processing external command output (pipes)
+✅ Stream size fits in memory
+✅ Entire stream needed before processing
+✅ Can afford single-pass memory usage
+✅ Batch writing is acceptable
+
+### When to Use Line-by-Line
+
+Use line-by-line when:
+
+✅ Streams are unbounded or very large
+✅ Need incremental processing with early exit
+✅ Memory is constrained
+✅ Real-time processing required
 
 ## Summary
 

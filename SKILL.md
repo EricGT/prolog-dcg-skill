@@ -155,6 +155,117 @@ non_white(C) --> [C], { \+ code_type(C, space) }.
 peek(C) --> [C], [C].
 ```
 
+### ⚠️ WARNING: code_type/2 and Unicode
+
+**IMPORTANT**: `code_type(C, alpha)` accepts **Unicode letters** (ü, é, ñ, etc.), not just ASCII letters (a-z, A-Z).
+
+This is often **not** what you want when parsing programming language identifiers (C, Java, classic languages).
+
+#### The Problem
+
+```prolog
+% Accepts Unicode - probably wrong for C/Java/etc.
+c_identifier_char(C) --> [C], { code_type(C, alpha) }.
+
+% This will SUCCEED but shouldn't for C identifiers!
+?- string_codes("über", Codes), phrase(c_identifier_char(_), Codes, _).
+true.  % 'ü' is accepted as alpha - WRONG for C!
+```
+
+#### Solutions by Use Case
+
+**For ASCII-Only Languages (C, Java, classic languages):**
+
+Use explicit ASCII range checks:
+
+```prolog
+% C identifier - ASCII letters only
+ascii_letter(C) -->
+    [C],
+    {
+        (C >= 0'a, C =< 0'z)
+    ;   (C >= 0'A, C =< 0'Z)
+    }.
+
+% C identifier start character
+c_id_start(C) -->
+    [C],
+    {
+        (C >= 0'a, C =< 0'z)
+    ;   (C >= 0'A, C =< 0'Z)
+    ;   C = 0'_
+    }.
+
+% C identifier continuation character
+c_id_rest(C) -->
+    [C],
+    {
+        (C >= 0'a, C =< 0'z)
+    ;   (C >= 0'A, C =< 0'Z)
+    ;   (C >= 0'0, C =< 0'9)
+    ;   C = 0'_
+    }.
+```
+
+**For Unicode-Accepting Contexts:**
+
+Use `code_type/2` with awareness:
+
+```prolog
+% Natural language processing - Unicode is fine
+word_char(C) --> [C], { code_type(C, alpha) }.
+
+% Modern language identifiers (Rust, Swift allow Unicode)
+modern_identifier_char(C) --> [C], { code_type(C, alnum) }.
+```
+
+**For Hybrid Approach:**
+
+Combine `code_type/2` with ASCII restriction:
+
+```prolog
+% Use code_type but restrict to ASCII range
+ascii_alpha(C) -->
+    [C],
+    {
+        code_type(C, alpha),
+        C < 128  % ASCII only
+    }.
+```
+
+#### When to Use Each Approach
+
+**Use explicit ASCII checks when:**
+- ✅ Parsing C, Java, or classic programming languages
+- ✅ Implementing strict specifications (ANSI C, POSIX, etc.)
+- ✅ Ensuring cross-platform portability
+- ✅ Matching legacy tooling behavior (cscope, ctags, etc.)
+
+**Use code_type/2 when:**
+- ✅ Parsing natural language text
+- ✅ Accepting international identifiers (modern languages)
+- ✅ Processing human-readable content
+- ✅ Implementing Unicode-aware specifications
+
+#### Testing Recommendation
+
+Always include a Unicode rejection test for ASCII-only parsers:
+
+```prolog
+:- begin_tests(identifier_unicode).
+
+% Verify non-ASCII is rejected for C identifiers
+test(unicode_rejected, [fail]) :-
+    string_codes("über", Codes),
+    phrase(c_identifier(_), Codes, _).
+
+test(ascii_only_accepted, [true(Id == valid)]) :-
+    string_codes("valid", Codes),
+    phrase(c_identifier(Id), Codes, _).
+
+:- end_tests(identifier_unicode).
+```
+
 ## Most Common Patterns
 
 For quick reference, here are the most frequently used patterns. For comprehensive patterns, see [PATTERNS.md](PATTERNS.md).

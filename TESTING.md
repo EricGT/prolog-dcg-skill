@@ -41,6 +41,107 @@ test(tsv_line_no_newline, [true(Fields == [a, b])]) :-
 :- end_tests(parser).
 ```
 
+## Pattern: Testing Non-Exported DCG Rules
+
+### The Solution: Module Qualification
+
+**Don't export internal predicates for testing.** Instead, use explicit module qualification to access them directly in tests while maintaining proper encapsulation.
+
+**Module definition (keep internals private):**
+
+```prolog
+:- module(cscope_extract, [
+    % Public API only
+    generate_cscope_data/2,
+    extract_definitions/3,
+    extract_function_calls/3
+]).
+
+% Internal DCG rules (not exported)
+global_definition(Symbol, Kind) --> ...
+c_identifier(Id) --> ...
+c_identifier_rest(Rest) --> ...
+```
+
+**Test file with module qualification:**
+
+```prolog
+% test/prolog/test_cscope_extract.pl
+:- begin_tests(cscope_dcg_internal).
+
+% Test internal DCG directly using module:predicate qualification
+test(macro_simple, [true((Symbol == 'MAX_SIZE', Kind == macro))]) :-
+    string_codes("#define MAX_SIZE", Codes),
+    phrase(cscope_extract:global_definition(Symbol, Kind), Codes, _Rest).
+
+test(identifier_underscore, [true(Id == '_private')]) :-
+    string_codes("_private", Codes),
+    phrase(cscope_extract:c_identifier(Id), Codes, _Rest).
+
+test(identifier_rest_digits, [true(Rest == 'bar123')]) :-
+    string_codes("bar123", Codes),
+    phrase(cscope_extract:c_identifier_rest(Rest), Codes, _Rest).
+
+:- end_tests(cscope_dcg_internal).
+```
+
+### Proper Test Execution Workflow
+
+Following [PlUnit documentation best practices](https://www.swi-prolog.org/pldoc/doc_for?object=section(%27packages/plunit.html%27)):
+
+```prolog
+% 1. Load the source module
+?- [src/prolog/cscope_extract].
+true.
+
+% 2. Load test files using load_test_files/1
+?- load_test_files([]).
+true.
+
+% 3. Run tests
+?- run_tests.
+% PL-Unit: cscope_dcg_internal ... done
+% All 3 tests passed
+true.
+```
+
+**Critical:** Use `load_test_files([])` instead of directly consulting `.plt` files. This ensures the module system maintains proper context, allowing module-qualified calls to work correctly.
+
+### Why This Approach Works
+
+- ✅ **Maintains encapsulation** - internal predicates never exposed in public API
+- ✅ **Direct testing** - test DCG rules directly without indirection
+- ✅ **Comprehensive edge case coverage** - easy to test all scenarios
+- ✅ **Fast execution** - no API layer overhead
+- ✅ **Explicit intent** - `module:predicate` syntax makes it obvious you're testing internals
+- ✅ **Clean module interface** - only true public API exported
+- ✅ **Standard workflow** - follows PlUnit documentation best practices
+
+### Real-World Results
+
+Testing experience with cscope_extract.pl (77-test suite):
+
+```prolog
+% Clean module interface - only public API
+:- module(cscope_extract, [
+    generate_cscope_data/2
+]).
+
+% Test internals with module qualification
+test(identifier_test) :-
+    phrase(cscope_extract:c_identifier(Id), Codes, _).
+
+test(definition_test) :-
+    phrase(cscope_extract:global_definition(Sym, Kind), Codes, _).
+```
+
+**Results:**
+- ✅ 77 comprehensive tests (26 for `global_definition//2`, 23 for `c_identifier//1`)
+- ✅ Discovered anti-pattern in `has_function_call//2` through direct testing
+- ✅ Found Unicode issue with `code_type/2` through edge case coverage
+- ✅ Maintained clean module interface with only public API exported
+- ✅ Easy test organization by DCG rule
+
 ## Pattern: Testing Edge Cases
 
 ```prolog
@@ -66,6 +167,280 @@ test(invalid_line_graceful, [true(Result = invalid(_, _))]) :-
     phrase(parse_line(0, 1, Result), `bad\tdata`).
 
 :- end_tests(parser_edge_cases).
+```
+
+## Pattern: Documenting Known Issues with Test Annotations
+
+### Overview
+
+plunit provides test options for documenting known problems without failing the test suite. This allows you to track technical debt, document limitations, and maintain clean CI/CD pipelines while being transparent about issues.
+
+### Test Annotations
+
+#### [blocked('reason')]
+
+Use for known bugs or missing features that are documented but not yet fixed:
+
+```prolog
+:- begin_tests(known_issues).
+
+% Functionality doesn't work due to architectural issue
+test(feature_not_implemented, [blocked('waiting for DCG library update')]) :-
+    phrase(future_dcg_feature, Input).
+
+% Broken due to anti-pattern (manual difference lists)
+test(detect_paren_simple, [blocked('test_has_paren/1 is broken')]) :-
+    test_has_paren("contains ( paren").
+
+test(detect_paren_nested, [blocked('test_has_paren/1 is broken')]) :-
+    test_has_paren("func(nested(call))").
+
+:- end_tests(known_issues).
+```
+
+**When to use:**
+- External dependencies not yet available
+- Features planned but not implemented
+- Bugs in external code you depend on
+- Architectural issues requiring major refactoring
+- Breaking changes that need coordination
+
+#### [fixme('reason')]
+
+Use for bugs in your code that should be fixed:
+
+```prolog
+:- begin_tests(needs_fixing).
+
+% Code behavior is incorrect and should be fixed
+test(should_reject_unicode, [fixme('code_type/2 accepts Unicode')]) :-
+    % This SHOULD fail but doesn't due to code_type/2 behavior
+    string_codes("über", Codes),
+    \+ phrase(c_identifier(_), Codes, _).
+
+test(boundary_condition_bug, [fixme('off-by-one in line counting')]) :-
+    phrase(parse_with_position(Result), Input),
+    Result = pos(LineNum, _),
+    LineNum == 10.  % Currently returns 9
+
+:- end_tests(needs_fixing).
+```
+
+**When to use:**
+- Bugs you've identified but haven't fixed yet
+- Incorrect behavior that violates specifications
+- Edge cases that fail but shouldn't
+- Behavior that needs to change
+
+#### [fail] or [condition(fail)]
+
+Use for proper negative tests (these should fail and that's correct):
+
+```prolog
+:- begin_tests(negative_tests).
+
+% Valid negative test - this SHOULD fail
+test(invalid_input_rejected, [fail]) :-
+    phrase(c_identifier(_), "123invalid", _).
+
+test(empty_identifier_rejected, [fail]) :-
+    phrase(c_identifier(_), "", _).
+
+:- end_tests(negative_tests).
+```
+
+**When to use:**
+- Testing that invalid input is properly rejected
+- Verifying error conditions
+- Ensuring constraints are enforced
+
+### Benefits of Test Annotations
+
+1. **Track Technical Debt** - Known issues are visible in test suite
+2. **Document Limitations** - Clear what doesn't work and why
+3. **Clean Test Runs** - Issues don't block CI/CD pipelines
+4. **Easy Discovery** - Grep for `blocked` or `fixme` to find issues
+5. **Version Tracking** - Git history shows when issues were introduced
+6. **Professional Communication** - Transparent about known problems
+
+### Test Output Examples
+
+**Standard output:**
+
+```
+% PL-Unit: cscope_extract_dcg
+% 10 tests are blocked (use run_tests/2 with show_blocked(true) for details)
+% all 1 tests flagged FIXME failed
+% All 67 (+-1 sub-tests) tests passed in 0.035 seconds (0.031 cpu)
+```
+
+**Show blocked test details:**
+
+```prolog
+?- run_tests([show_blocked(true)]).
+
+% PL-Unit: cscope_extract_dcg
+% Blocked tests:
+%   test_has_paren:detect_paren_simple (blocked: test_has_paren/1 is broken)
+%   test_has_paren:detect_paren_in_middle (blocked: test_has_paren/1 is broken)
+%   test_has_paren:detect_paren_nested (blocked: test_has_paren/1 is broken)
+%   ...
+% all 1 tests flagged FIXME failed
+% All 67 (+-1 sub-tests) tests passed in 0.035 seconds
+```
+
+### Pattern: Document and Track
+
+Use this pattern for discovered issues:
+
+```prolog
+% 1. Create test that exposes the issue
+test(unicode_in_identifier, [fixme('code_type/2 accepts non-ASCII letters')]) :-
+    % C identifiers must be ASCII-only, but code_type/2 accepts Unicode
+    string_codes("über", Codes),
+    \+ phrase(c_identifier(_), Codes, _).
+
+% 2. Add detailed comment explaining the issue
+/**
+ * FIXME: code_type/2 Unicode Acceptance Issue
+ *
+ * Problem: code_type(C, alpha) accepts Unicode letters (ü, é, ñ, etc.)
+ *          but C identifiers (ANSI C, C89, C99) must be ASCII-only.
+ *
+ * Impact: Parser incorrectly accepts invalid C identifiers like "über",
+ *         "naïve", "café" which are not valid in C source code.
+ *
+ * Workaround: Use explicit ASCII range checks:
+ *             C >= 0'a, C =< 0'z ; C >= 0'A, C =< 0'Z
+ *
+ * See: ascii_letter_check/1 for correct implementation
+ *
+ * Tracking: GitHub issue #42
+ * Priority: Medium (affects correctness but not common in practice)
+ */
+
+% 3. Create issue in your tracker (GitHub, etc.)
+
+% 4. When fixed, remove annotation and update test
+test(unicode_in_identifier) :-
+    % Now correctly rejects non-ASCII
+    string_codes("über", Codes),
+    \+ phrase(c_identifier(_), Codes, _).
+```
+
+### Best Practices
+
+✅ **Use `blocked`** for missing features or external dependencies
+
+✅ **Use `fixme`** for bugs in your code that need fixing
+
+✅ **Use `[fail]`** for proper negative tests (expected failures)
+
+✅ **Add detailed comments** explaining the issue, impact, and workaround
+
+✅ **Reference issue tracker** if available (GitHub issue number, etc.)
+
+✅ **Include priority/severity** in comments for triage
+
+✅ **Remove annotations** when issues are fixed
+
+✅ **Review periodically** to prevent stale annotations
+
+❌ **Don't use blocked/fixme as excuse** to avoid fixing bugs indefinitely
+
+❌ **Don't leave annotations without explanation** - always add comments
+
+### Real-World Example
+
+From the cscope_extract.pl test suite:
+
+```prolog
+/**
+ * Tests for test_has_paren/1 predicate
+ *
+ * BLOCKED: All tests blocked due to anti-pattern in has_function_call//2
+ *
+ * Issue: has_function_call//2 is declared with DCG notation (//2) but
+ *        implemented with manual difference list parameters. This breaks
+ *        phrase/2 usage in test_has_paren/1.
+ *
+ * Resolution: Rewrite has_function_call//2 as proper DCG or remove
+ *             DCG notation and fix test_has_paren/1 accordingly.
+ */
+:- begin_tests(test_has_paren).
+
+test(detect_paren_simple, [blocked('test_has_paren/1 is broken')]) :-
+    test_has_paren("(").
+
+test(detect_paren_in_middle, [blocked('test_has_paren/1 is broken')]) :-
+    test_has_paren("text ( more").
+
+test(no_paren, [blocked('test_has_paren/1 is broken')]) :-
+    \+ test_has_paren("no paren here").
+
+% ... 7 more blocked tests ...
+
+:- end_tests(test_has_paren).
+```
+
+**Results:**
+- ✅ 10 blocked tests clearly documented
+- ✅ Issue explanation in comments
+- ✅ Test suite still passes (67 passing tests)
+- ✅ Technical debt is tracked and visible
+- ✅ Tests ready to enable when issue is fixed
+
+### Integration with Development Workflow
+
+**During development:**
+
+```bash
+# Find all blocked tests
+$ grep -r "blocked(" test/
+
+# Find all fixme tests
+$ grep -r "fixme(" test/
+
+# Count technical debt
+$ grep -c "blocked\|fixme" test/**/*.pl
+```
+
+**In CI/CD:**
+
+```prolog
+% ci_tests.pl - Run tests but allow blocked/fixme
+:- initialization(main, main).
+
+main :-
+    run_tests([silent(true)]),
+    halt.
+
+main :-
+    format('Tests failed!~n'),
+    halt(1).
+```
+
+### Summary Statistics Example
+
+After comprehensive testing with annotations:
+
+```
+Test Suite: cscope_extract_dcg
+Total Tests: 77
+├─ Passing: 67
+├─ Blocked: 10 (test_has_paren/1 anti-pattern)
+└─ Fixme: 1 (code_type/2 Unicode issue)
+
+Technical Debt Tracked: 2 issues
+- Issue #42: code_type/2 Unicode acceptance (Priority: Medium)
+- Issue #43: has_function_call//2 anti-pattern (Priority: High)
+
+Test Coverage:
+- global_definition//2: 26 tests
+- c_identifier//1: 23 tests
+- Integration: 7 tests
+- Edge cases: 11 tests
+- Known issues: 10 tests (blocked)
 ```
 
 ## Pattern: Testing with Position Tracking

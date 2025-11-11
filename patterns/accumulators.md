@@ -235,6 +235,143 @@ parse_items([Item|Items], Acc0, Acc) -->  % ✅ Correct
     ...
 ```
 
+## Pattern: Three-Clause Error Handling for Line Parsers
+
+### Overview
+
+Robust file parsing requires graceful handling of empty lines, valid lines, and malformed lines. This pattern ensures parsing doesn't crash on unexpected input.
+
+### The Three-Clause Structure
+
+```prolog
+% Clause 1: Empty/Skip Case
+line_parser(none, Acc, Acc) -->
+    'whites*',
+    newline,
+    !.
+
+% Clause 2: Success Case
+line_parser(Result, Acc0, Acc) -->
+    parse_fields(...),
+    newline,
+    !,
+    { process_and_validate(..., Result, Acc0, Acc) }.
+
+% Clause 3: Fallback Case (catches errors)
+line_parser(none, Acc, Acc) -->
+    skip_until_newline,
+    newline.
+```
+
+### Why This Works
+
+1. **Clause 1** handles empty lines explicitly (common case)
+2. **Clause 2** processes valid input and updates state
+3. **Clause 3** catches malformed input without crashing
+
+The cuts (`!`) prevent backtracking after successful parses, ensuring deterministic behavior.
+
+### Complete Example
+
+```prolog
+% Parse file with robust error handling
+symbol_file_lines(Defs, Seen0) -->
+    symbol_line(Def, Seen0, Seen1),
+    !,
+    {
+        (   Def = def(_, _, _, _)        % Valid definition found
+        ->  Defs = [Def|RestDefs]
+        ;   Defs = RestDefs,              % Skip invalid/empty
+            Seen1 = Seen0                 % No state change
+        )
+    },
+    symbol_file_lines(RestDefs, Seen1).
+symbol_file_lines([], _) -->
+    [].
+
+% Clause 1: Empty line
+symbol_line(none, Seen, Seen) -->
+    'whites*',
+    newline,
+    !.
+
+% Clause 2: Valid line
+symbol_line(Def, Seen0, Seen) -->
+    field_until_tab(FileCodes), `\t`,
+    field_until_tab(ScopeCodes), `\t`,
+    field_until_tab(LineNumCodes), `\t`,
+    field_until_newline(ContextCodes),
+    newline,
+    !,
+    {
+        atom_codes(File, FileCodes),
+        atom_codes(Scope, ScopeCodes),
+        number_codes(LineNum, LineNumCodes),
+        string_codes(Context, ContextCodes),
+        process_line(File, Scope, LineNum, Context, Def, Seen0, Seen)
+    }.
+
+% Clause 3: Malformed line - skip gracefully
+symbol_line(none, Seen, Seen) -->
+    skip_until_newline,
+    newline.
+```
+
+### Benefits
+
+✅ **Robustness**: Handles unexpected input without crashing
+✅ **Clarity**: Clear separation of empty/valid/invalid cases
+✅ **Maintainability**: Easy to add logging or error collection
+✅ **Determinism**: Cuts prevent unwanted backtracking
+✅ **Accumulator Safety**: Invalid lines don't corrupt state
+
+### Pattern Variations
+
+**With Error Collection:**
+
+```prolog
+% Collect errors instead of silently skipping
+symbol_line(error(LineNum, Reason), Seen, Seen) -->
+    { get_current_line(LineNum) },
+    skip_until_newline,
+    newline,
+    { Reason = 'Malformed line' }.
+```
+
+**With Debug Logging:**
+
+```prolog
+% Clause 3 with debug output
+symbol_line(none, Seen, Seen) -->
+    skip_until_newline,
+    newline,
+    { debug(parser, 'Skipped malformed line', []) }.
+```
+
+### Testing Error Handling
+
+```prolog
+:- begin_tests(robust_parsing).
+
+test(empty_line_skipped) :-
+    phrase(symbol_line(Result, [], Seen), `\n`),
+    Result == none,
+    Seen == [].
+
+test(valid_line_parsed) :-
+    Input = `file.c\tmain\t10\tint main() {\n`,
+    phrase(symbol_line(Result, [], Seen), Input),
+    Result = def(_, _, _, _).
+
+test(malformed_line_skipped) :-
+    Input = `incomplete\tdata\n`,
+    phrase(symbol_line(Result, [], Seen), Input),
+    Result == none,
+    Seen == [].
+
+:- end_tests(robust_parsing).
+```
+
 ## Integration with Other Patterns
 
 Accumulators work well with:

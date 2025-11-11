@@ -50,6 +50,108 @@ c_id_rest([C|Cs]) -->
 c_id_rest([]) --> [].
 ```
 
+## Pattern: Partial Consumption with phrase/3
+
+### The Problem
+
+DCG rules often match prefixes rather than complete input. Using `phrase/2` with such rules causes unexpected failures because `phrase/2` requires consuming the entire input.
+
+### The Solution
+
+Use `phrase/3` to allow unconsumed remainder:
+
+```prolog
+% phrase/3 returns remaining unconsumed input in third argument
+phrase(Grammar, Input, Remainder)
+```
+
+### Example: Parsing C Macro Definitions
+
+```prolog
+% DCG that matches "#define SYMBOL" but stops after identifier
+% Does not consume the macro value
+macro_definition(Symbol) -->
+    'whites*', `#define`, 'whites+',
+    c_identifier(Symbol).
+
+% Test with phrase/3 - allows remainder
+test(macro_with_value) :-
+    string_codes("#define MAX_SIZE 1024", Codes),
+    phrase(macro_definition(Symbol), Codes, Rest),
+    Symbol == 'MAX_SIZE',
+    string_codes(" 1024", Rest).  % Remainder not consumed
+
+% Test can also ignore remainder
+test(macro_simple) :-
+    string_codes("#define MAX_SIZE", Codes),
+    phrase(macro_definition(Symbol), Codes, _Rest),
+    Symbol == 'MAX_SIZE'.
+```
+
+### When to Use phrase/3
+
+Use `phrase/3` when:
+
+✅ DCG matches a prefix pattern (e.g., `#define SYMBOL` without caring about rest)
+✅ Testing that DCG stops at correct boundary
+✅ Multiple DCG rules will process different parts sequentially
+✅ You want to verify what remains after parsing
+
+### When to Use phrase/2
+
+Use `phrase/2` when:
+
+✅ DCG should consume entire input
+✅ Validating complete structure (e.g., complete line with line ending)
+✅ Parsing a complete token or record
+✅ Any remainder indicates an error
+
+### Pattern: Testing Boundaries
+
+Explicitly test where parsing stops:
+
+```prolog
+test(stops_at_space) :-
+    string_codes("identifier next_token", Codes),
+    phrase(c_identifier(Id), Codes, Rest),
+    Id == identifier,
+    string_codes(" next_token", Rest).  % Verify boundary
+
+test(stops_at_paren) :-
+    string_codes("func(args)", Codes),
+    phrase(c_identifier(Id), Codes, Rest),
+    Id == func,
+    string_codes("(args)", Rest).
+
+test(stops_at_semicolon) :-
+    string_codes("variable;", Codes),
+    phrase(c_identifier(Id), Codes, Rest),
+    Id == variable,
+    Rest == [0';].
+```
+
+### Common Mistake
+
+```prolog
+% WRONG - phrase/2 expects complete consumption
+test(partial_parse) :-
+    string_codes("#define MAX 100", Codes),
+    phrase(macro_definition(S), Codes).  % FAILS - " 100" unconsumed
+
+% RIGHT - phrase/3 allows remainder
+test(partial_parse) :-
+    string_codes("#define MAX 100", Codes),
+    phrase(macro_definition(S), Codes, _).  % SUCCEEDS
+```
+
+### Real-World Usage
+
+This pattern is essential for:
+- Parsing file formats where each line has optional trailing data
+- Implementing prefix matchers (keywords, identifiers, operators)
+- Building parsers that compose multiple DCG rules sequentially
+- Testing individual DCG components in isolation
+
 ## Pattern: Quantifier Naming Conventions
 
 **IMPORTANT**: Use suffix notation to indicate cardinality, with quotes around predicate names.

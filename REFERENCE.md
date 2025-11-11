@@ -342,13 +342,16 @@ parse_file([]) --> eos.
 When writing DCG parsers, ensure:
 
 ### Parsing
-- ✅ Use `phrase_from_file/2` or `phrase/2` with codes, not intermediate string splits
+- ✅ Use `phrase_from_file/2` for direct file parsing with single-pass DCG
+- ✅ Use `phrase/3` when DCG matches prefixes (allows unconsumed remainder)
+- ✅ Use `phrase/2` when DCG should consume entire input
 - ✅ Parse line endings within DCG rules
 - ✅ Parse field delimiters within DCG rules
 - ✅ Keep all parsing logic in DCG rules
 - ✅ Use cuts appropriately to prevent backtracking
 - ✅ Use tail recursion for lists
 - ✅ Convert to atoms/strings only at the end of parsing
+- ✅ Use three-clause pattern for robust line parsing (empty/valid/malformed)
 - ❌ Don't split strings before parsing with DCG
 - ❌ Don't convert between string/atom/codes multiple times
 - ❌ Don't mix string operations with DCG rules
@@ -408,6 +411,8 @@ When writing DCG parsers, ensure:
 
 ### Character Classification
 - ✅ **PREFER** `code_type/2` for single character classification when possible
+- ⚠️ **WARNING**: `code_type(C, alpha)` accepts Unicode letters, not just ASCII
+- ✅ Use explicit ASCII range checks (C >= 0'a, C =< 0'z) for C/Java/classic languages
 - ✅ Define specific character checks: `is_tab(9)`, `is_newline(10)`
 
 ### Clause Indexing
@@ -473,8 +478,13 @@ When writing DCG parsers, ensure:
 ### Testing
 - ✅ **MUST** write unit tests for all DCG clauses using plunit
 - ✅ **MUST** place tests in separate test files (test/prolog/test_*.pl)
+- ✅ Use module qualification (`module:predicate`) to test non-exported DCG rules
+- ✅ Use `load_test_files([])` workflow for proper module context
+- ✅ Use `[blocked('reason')]` to document known issues without failing tests
+- ✅ Use `[fixme('reason')]` to mark bugs that need fixing
 - ✅ Test happy path, edge cases, invalid input, and large inputs
 - ✅ Test different line endings: `\n`, `\r\n`, `\r`, no ending
+- ✅ Use `phrase/3` to test prefix matching and boundaries
 - ✅ Use `phrase/2` for incremental testing during development
 - ✅ Run tests frequently: `?- run_tests.`
 

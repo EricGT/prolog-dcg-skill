@@ -8,6 +8,7 @@ Comprehensive DCG patterns for parsing in SWI-Prolog, organized by category. See
 Core DCG parsing patterns for everyday use:
 - Tab-Separated Fields and delimiters
 - C Identifiers and token parsing
+- **Partial Consumption with phrase/3** (NEW) - Testing prefix matches and boundaries
 - Quantifier naming conventions (?, *, +)
 - DCG string syntax and code handling
 - Disjunction formatting for readability
@@ -15,7 +16,6 @@ Core DCG parsing patterns for everyday use:
 - Equality operators in guards (== vs =)
 - Rest of line parsing
 - String/Atom/Codes conversions
-- Partial parsing with phrase/3
 - Lookahead and backtracking control
 - Bounds checking for peek operations
 - Avoiding redundant peek
@@ -27,6 +27,7 @@ Patterns for stateful parsing with accumulators:
 - Accumulator naming conventions (Acc0/Acc)
 - memberchk/2 vs member/2 for deterministic checking
 - Accumulator placement at end of argument list
+- **Three-Clause Error Handling for Line Parsers** (NEW) - Robust handling of empty/valid/malformed lines
 
 ### [Difference List Patterns](difference-lists.md)
 Advanced patterns for efficient list building and transformation:
@@ -56,9 +57,11 @@ Patterns for performance and efficiency:
 ### [File I/O Integration](file-io.md)
 Patterns for integrating DCG parsers with file operations:
 - Using phrase_from_file/2
+- **Direct File Parsing with phrase_from_file/2** (NEW) - Single-pass parsing with accumulator threading
 - Using phrase/2 with read_string
 - Using catch/3 for error handling
 - Stream management with call_cleanup/2
+- **Single-Pass Stream Processing** (NEW) - Efficient stream parsing from external sources
 
 ## Quick Reference by Use Case
 
@@ -76,11 +79,18 @@ Patterns for integrating DCG parsers with file operations:
 
 **Error reporting and debugging:**
 - [Position Tracking](position-tracking.md) - Line and offset tracking
-- [Partial Parsing](basic.md#pattern-partial-parsing-with-phrase3) - Find parse failures
+- [Partial Parsing](basic.md#pattern-partial-consumption-with-phrase3) - Find parse failures
+- [Three-Clause Error Handling](accumulators.md#pattern-three-clause-error-handling-for-line-parsers) - Robust line parsing
 
 **Performance optimization:**
 - [Optimization Patterns](optimization.md) - Forward accumulation, indexing
 - [Accumulator Patterns](accumulators.md) - Efficient state management
+- [Single-Pass Stream Processing](file-io.md#pattern-single-pass-stream-processing) - Efficient stream parsing
+
+**File parsing:**
+- [Direct File Parsing](file-io.md#pattern-direct-file-parsing-with-phrase_from_file2) - Single-pass with accumulators
+- [Stream Processing](file-io.md#pattern-single-pass-stream-processing) - Parse external command output
+- [Three-Clause Error Handling](accumulators.md#pattern-three-clause-error-handling-for-line-parsers) - Robust line parsing
 
 ## See Also
 
