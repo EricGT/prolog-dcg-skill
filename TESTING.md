@@ -580,3 +580,154 @@ true.
 % All 28 tests passed
 true.
 ```
+
+## Pattern: Testing Predicates with Cross-Module Dependencies
+
+> **For detailed explanation of meta-predicates and call/N, see [human-docs/understanding_meta_predicates.md](human-docs/understanding_meta_predicates.md)**
+
+### The Problem
+
+Main module predicates cannot "see" predicates defined in test modules.
+
+**Jan Wielemaker**: "As is, this has no clean solution in the plain SWI-Prolog module system."
+
+**Example**: `ancestor/2` in main module calls `parent/2`, but can't find test module's `parent/2` facts.
+
+**Relevant for**: Transitive closures, "many worlds" testing, reachability predicates, any recursive predicate that needs test-specific base facts.
+
+### Solution: Parameterized Relations
+
+**Approach**: Pass the relation predicate as a parameter using `call/2`. This is Jan Wielemaker's recommended solution.
+
+#### Implementation
+
+```prolog
+:- meta_predicate transitive_closure(2, ?, ?).
+
+% Generic transitive closure over any binary relation
+transitive_closure(Rel, A, B) :-
+    call(Rel, A, B).
+transitive_closure(Rel, A, C) :-
+    call(Rel, A, B),
+    transitive_closure(Rel, B, C).
+```
+
+#### Usage in Main Module
+
+```prolog
+% In main module - define in terms of generic transitive_closure
+ancestor(A, B) :-
+    transitive_closure(parent, A, B).
+
+contains(Assembly, Part) :-
+    transitive_closure(part_of, Assembly, Part).
+```
+
+#### Usage in Tests
+
+```prolog
+:- begin_tests(assembly).
+
+% Define test-specific facts locally in test module
+parent(bike, frame).
+parent(bike, wheel).
+parent(wheel, spokes).
+
+% Call generic predicate with local relation
+test(bike_contains_spokes) :-
+    transitive_closure(parent, bike, spokes).
+
+test(bike_contains_frame) :-
+    transitive_closure(parent, bike, frame).
+
+test(bike_not_contains_car, [fail]) :-
+    transitive_closure(parent, bike, car).
+
+:- end_tests(assembly).
+```
+
+#### Why This Works
+
+`call(Rel, A, B)` resolves the predicate `Rel` in the **caller's module context**. When called from a test module, it finds the test module's local facts. The meta_predicate declaration ensures proper module resolution.
+
+### Key Concepts
+
+#### Meta-Predicate Declaration
+
+```prolog
+:- meta_predicate transitive_closure(2, ?, ?).
+```
+
+- `2` means first argument is a predicate taking 2 arguments
+- `?` means normal term arguments
+- Required for correct module context resolution
+
+#### How call/2 Works
+
+```prolog
+call(parent, bike, wheel)
+% Expands to:
+parent(bike, wheel)
+```
+
+The predicate name is the first argument, additional arguments are added to form the complete goal.
+
+### Best Practices
+
+1. **Name generic predicates appropriately**: `transitive_closure/3`, `reflexive_transitive_closure/3`, `symmetric_closure/3`
+2. **Keep test data in test modules** - don't export test facts
+3. **Declare meta_predicate** for proper module resolution
+4. **Wrap specific predicates** - define `ancestor/2` as `transitive_closure(parent, A, B)` for clean API
+
+### Benefits
+
+- ✅ Most elegant and reusable solution
+- ✅ Pure declarative code (no dynamic assertions)
+- ✅ Works naturally with test-local predicates
+- ✅ Generic predicates usable with any relation
+- ✅ Clean separation between generic utilities and specific applications
+- ✅ No test setup/cleanup boilerplate needed
+
+### Common Patterns
+
+#### Reflexive Transitive Closure
+
+```prolog
+:- meta_predicate reflexive_transitive_closure(2, ?, ?).
+
+reflexive_transitive_closure(_Rel, A, A).
+reflexive_transitive_closure(Rel, A, B) :-
+    call(Rel, A, B).
+reflexive_transitive_closure(Rel, A, C) :-
+    call(Rel, A, B),
+    reflexive_transitive_closure(Rel, B, C).
+```
+
+#### Symmetric Closure
+
+```prolog
+:- meta_predicate symmetric(2, ?, ?).
+
+symmetric(Rel, A, B) :-
+    call(Rel, A, B).
+symmetric(Rel, A, B) :-
+    call(Rel, B, A).
+```
+
+#### Path Collection
+
+```prolog
+:- meta_predicate path(2, ?, ?, ?).
+
+path(Rel, A, B, [A, B]) :-
+    call(Rel, A, B).
+path(Rel, A, C, [A|Path]) :-
+    call(Rel, A, B),
+    path(Rel, B, C, Path).
+```
+
+### References
+
+- [SWI-Prolog Discourse: How to call predicate in test](https://swi-prolog.discourse.group/t/how-to-call-predicate-in-test-that-is-called-from-outside-of-test/1597)
+- Jan Wielemaker's recommendation for parameterized relations
+- Paulo Moura's "many worlds" testing pattern
